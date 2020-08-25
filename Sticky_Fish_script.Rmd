@@ -4,10 +4,10 @@ author: "Sarah Roberts"
 date: "8/21/2020"
 output: html_document
 ---
-
+#README
 This file does the following: 
-1. Load packages and functions needed to run the code 
-2. Prepare the NEFSC bottom trawl dataset from the original format. The original data can be downloaded from oceanadapt.rutgers.edu
+1. Load packages and functions needed to run the code. Prepare the NEFSC bottom trawl dataset from the original format. The original data can be downloaded from oceanadapt.rutgers.edu
+2. Check stratum to select stratum that were consistently sampled 
 3. Select species that are present in a certain number of trawls 
 4. Run gams to determine how species CPUE are influenced by different environmental covariates. 
 5. Calculate shifts in geographic distributions such as biomass weighted mean centroids and range sizes. 
@@ -92,6 +92,8 @@ library(reshape)
 library(ggpubr)
 library(ggsci)
 library(scales)
+library(rnaturalearth) #gives you some nice shapefiles 
+
 ```
 
 ##1.2 functions 
@@ -134,9 +136,7 @@ meanna = function(x){
 
 ```
 
-
-#2 Data prep 
-##2.1 load data 
+##1.3 Load and clean data 
 ```{r}
 # Compile NEUS ===========================================================
 print("Compile NEUS")
@@ -146,7 +146,7 @@ load("neus_SVSPP.RData")
 
 neus_survdat <- survdat %>% 
   # select specific columns
-  select(CRUISE6, STATION, STRATUM, SVSPP, CATCHSEX, SVVESSEL, YEAR, SEASON, EST_TOWDATE, LAT, LON, DEPTH, SURFTEMP, SURFSALIN, BOTTEMP, BOTSALIN, ABUNDANCE, BIOMASS) %>% 
+ dplyr::select(CRUISE6, STATION, STRATUM, SVSPP, CATCHSEX, SVVESSEL, YEAR, SEASON, EST_TOWDATE, LAT, LON, DEPTH, SURFTEMP, SURFSALIN, BOTTEMP, BOTSALIN, ABUNDANCE, BIOMASS) %>% 
   # remove duplicates
   distinct() %>% 
   mutate(SVVESSEL = as.character(SVVESSEL), 
@@ -162,10 +162,10 @@ neus_survdat <- neus_survdat %>%
 # repeat for spp file 
 neus_spp <- spp %>%
   # remove some columns from spp data
-  select(-ITISSPP, -COMNAME, -AUTHOR) %>% 
+ dplyr::select(-ITISSPP, -COMNAME, -AUTHOR) %>% 
   mutate(SCINAME = as.character(SCINAME))
 
-files <- as.list(dir(pattern = "neus_strata", path = "data_raw", full.names = T))
+files <- as.list(dir(pattern = "neus_strata", path = "", full.names = T))
 
 neus_strata <- read_csv(here::here("", "neus_strata.csv"), col_types = cols(
   STRGRP_DESC = col_character(),
@@ -179,7 +179,7 @@ neus_strata <- read_csv(here::here("", "neus_strata.csv"), col_types = cols(
   MINLON = col_double(),
   MAXLON = col_double()
 )) %>% 
-  select(STRATUM, STRATUM_AREA) %>% 
+ dplyr::select(STRATUM, STRATUM_AREA) %>% 
   distinct()
 
 neus <- left_join(neus_survdat, neus_spp, by = "SVSPP") %>%
@@ -195,7 +195,7 @@ neus <- neus %>%
     # Calculate stratum area where needed (use convex hull approach)
     # convert square nautical miles to square kilometers
     stratumarea = STRATUM_AREA * 3.429904) %>% 
-  rename(year = YEAR,
+  dplyr::rename(year = YEAR,
          date = EST_TOWDATE,
          spp = SCINAME,
          lat = LAT, 
@@ -209,19 +209,38 @@ neus <- neus %>%
     !grepl("UNIDENTIFIED", spp)) %>%
   group_by(haulid, stratum, stratumarea, year, date, lat, lon, depth, spp, SEASON) %>% 
   summarise(wtcpue = sumna(wtcpue)) %>% 
-  select(haulid, year, date, lat, lon, stratum, stratumarea, depth, spp, wtcpue, SEASON) %>% 
+ dplyr::select(haulid, year, date, lat, lon, stratum, stratumarea, depth, spp, wtcpue, SEASON) %>% 
   ungroup()
 write.csv(neus, "neus_done_by_sarah.csv")
+```
+
+```{r}
+survdat <- survdat %>%
+  mutate(
+    # Create a unique haulid
+    haulid = paste(formatC(CRUISE6, width=6, flag=0), formatC(STATION, width=3, flag=0), formatC(STRATUM, width=4, flag=0), sep=''))
+
+write.csv(survdat, "survey_data.csv")
+```
 
 
-ocean_adapt <- neus
 
+
+##1.4 Tidy data 
+```{r}
+ocean_adapt <- read.csv("neus_done_by_sarah.csv")
+```
+
+manipulate ocean adapt to be in a tidy format. 
+```{r}
 ocean_adapt <- ocean_adapt %>% 
  group_by_at(vars(-wtcpue)) %>% # group by everything other than the value column. 
  mutate(row_id=1:n()) %>% ungroup() %>% # build group index
  spread(key=spp, value=wtcpue)  # spread
 
+#fall_catch$ID <- as.numeric(as.character(fall_catch$ID))
 ocean_adapt$haulid1 <- gsub(pattern = "-", replacement = "", x = ocean_adapt$haulid)
+#ocean_adapt$haulid1 <- as.numeric(as.integer(ocean_adapt$haulid1))
 ocean_adapt_select <- ocean_adapt %>% dplyr::select(-SEASON, -date, -row_id) %>% 
   group_by(haulid1) %>% 
   replace(is.na(.), 0) %>%
@@ -245,30 +264,41 @@ ocean_adapt_latlongdate <- ocean_adapt_select1 %>%
 write.csv(ocean_adapt_latlongdate, "ocean_adapt_latlongdate.csv")
 #now go back into gis and get the habitat variables using a spatial join (make sure the projections match up for this to work.)
 
-hab_vars <- read.csv("ocean_adapt_hab_vars.csv") #this is the ocean adapt haulid with the habitat data 
+total_full <- ocean_adapt_select1
 
-hab_vars <- hab_vars %>% 
-  dplyr::select(-Join_Count, -TARGET_FID, -JOIN_FID)
-
-ocean_adapt_select1$haulid <- as.numeric(as.integer(ocean_adapt$haulid1))
-
-total_full <- left_join(ocean_adapt_select1, hab_vars, by=c("haulid"))
 
 ```
 
-##2.1 check stratum 
+
+#2. Check stratum 
 figure out stratum that were consistently sampled every year and every season every year. 
 ```{r}
-lat_long_hab_vars <- read.csv("ocean_adapt_hab_vars.csv") #this is the ocean adapt haul information with habitat information downloaded from the nature conservnacy 
-total_full <- read.csv("total_full.csv") #this it the ocean adapt NEUS data with each row as a haul, and each column as a species joined to the habitat data above. 
+lat_long_hab_vars <- read.csv("ocean_adapt_hab_vars.csv")
+#fix this 
+lat_long_hab_vars$haulid <- as.character(lat_long_hab_vars$haulid)
+total_full <- left_join(total_full, lat_long_hab_vars, by="haulid")
 
-#changed gear type in 1984 so will use only the years after that 
-total_full <- subset(total_full, total_full$year > 1984)
+total_full <- total_full %>% dplyr::select(-ID, -GRIDCODE, -OBJECTID, -date.y, -lon.y, -lat.y, -year.y, -Field1, -JOIN_FID, -TARGET_FID, -Join_Count)
+
+names(total_full) <- gsub(".x", "", names(total_full))
+names(total_full) <- gsub(".y", "", names(total_full))
+
+#need to add bottom temperature and salinity data to it
+survey_data <- read.csv("survey_data.csv")
+
+survey_data <- survey_data %>% group_by(haulid) %>% 
+  summarise(bottemp = mean(BOTTEMP), surftemp = mean(SURFTEMP), botsalin = mean(BOTSALIN), surfsalin= mean(SURFSALIN))
+survey_data$haulid <- as.character(survey_data$haulid)
+total_full <- left_join(total_full, survey_data, by="haulid")
+
+
+write.csv(total_full, "total_full.csv")
+
+total_full <- subset(total_full, total_full$year > 1985)
 total_full$season <- total_full$SEASON
 tot_fall <- subset(total_full, season=="FALL")
 tot_spring <- subset(total_full, season=="SPRING")
 
-#figure out which stratum were consistently sampled 
 fall_strat_m <- tot_fall %>% group_by(stratum) %>% 
   summarise(
   years_fall = length(unique(year)))
@@ -280,8 +310,8 @@ spring_strat_m <- tot_spring %>% group_by(stratum) %>%
 tot_strat_m <- full_join(fall_strat_m, spring_strat_m, by=c("stratum"))
 
 #selecting out consistently sampled stratum for spring (need to choose these years) and fall (32 years) datasets 
-fall_strat_m_select <- subset(fall_strat_m, years_fall>=33) 
-spring_strat_m_select <- subset(spring_strat_m, years_spring>=33) 
+fall_strat_m_select <- subset(fall_strat_m, years_fall>=32) 
+spring_strat_m_select <- subset(spring_strat_m, years_spring>=32) 
 
 fall_stratum <- as.vector(fall_strat_m_select$stratum)
 spring_stratum <- as.vector(spring_strat_m_select$stratum)
@@ -297,16 +327,17 @@ write.csv(total, "total.csv")
 ```
 Alrighty we should have spring and fall datasets with stratum that were sampled every year for each 
 
+
 #3. Selecting species
 Selecting based on species that were present in a certain number of years 
 ```{r}
 #go back to original data 
-load("~/Documents/ClimateOceanPlanning/Datasets/ocean_adapt/mpinsky-OceanAdapt-9815545/data_raw/neus_Survdat.RData")
-load("~/Documents/ClimateOceanPlanning/Datasets/ocean_adapt/mpinsky-OceanAdapt-9815545/data_raw/neus_SVSPP.RData")
+load("neus_Survdat.RData")
+load("neus_SVSPP.RData")
 
 #which species are present in multiple years in both the spring and fall periods
 dat <- left_join(survdat, spp, by=c("SVSPP"))
-dat <- subset(dat, dat$YEAR >1984)
+dat <- subset(dat, dat$YEAR >1985)
 
 all_fall <- subset(dat, SEASON == "FALL") 
 
@@ -322,8 +353,8 @@ spring_y <- all_spring %>% group_by(SCINAME) %>%
 
 spp_by_year <- left_join(fall_y, spring_y, by=c("SCINAME"))
 
-#this is selecting species that were collected in the spring and fall for at least half of the dataset (17 out of 34 years)
-spp_by_year_selected <- subset(spp_by_year, spp_by_year$years_fall >16 & spp_by_year$years_spring >16)
+#this is selecting species that were collected in the spring and fall for at least half of the dataset (16 out of 33 years)
+spp_by_year_selected <- subset(spp_by_year, spp_by_year$years_fall >15 & spp_by_year$years_spring >15)
 
 spp_by_year_selected <- left_join(spp_by_year_selected, spp, by=c("SCINAME"))
 
@@ -331,29 +362,30 @@ write.csv(spp_by_year_selected, "spp_by_year_selected.csv")
 
 specnames <- as.vector(spp_by_year_selected$SCINAME)
 
-specnames <- specnames[1:151] #remove the last column which is NA 
+
 
 ```
 specnames should have 151 species in it 
 
-#4. Run Gams 
+#4.Gams 
 ```{r}
-
+library(mgcv)
 
 # create data frame to store results
 
 total <- read.csv("total.csv")
+colnames(total) <- gsub("[[:punct:]]$", "", colnames(total)) 
 specnames <- read.csv("spp_by_year_selected.csv")
 #need to add a _ 
 specnames$SCINAME <- gsub(" ", ".", specnames$SCINAME)
 specnames$SCINAME <- gsub("[[:punct:]]$", "", specnames$SCINAME) #for some reason it was putting punctuation at the end. get rid of that 
-
+specnames <- specnames[1:151,]
 spp <- specnames
 specnames <- as.vector(specnames$SCINAME)
-specnames <- specnames[1:151]
 
 
-#run gams for the fall 
+
+#fall 
 fall <- subset(total, total$season=="FALL")
 fall_gam_results <- data.frame()
 fall_gam_stand <- data.frame()
@@ -419,7 +451,6 @@ for (i in 1:length(specnames)) { #for each species in spec_list
 
 
 #combine with the common name data 
-spp$SCINAME <- gsub(pattern = " ", replacement = ".", x = spp$SCINAME)
 spring_gam_dev <- spring_gam_dev[-1,]
 spring_gam_dev <- left_join(spring_gam_dev, spp, by=c("names" = "SCINAME"))
 
@@ -432,9 +463,9 @@ write.csv(spring_gam_dev, "spring_gam_dev.csv")
 
 ```
 
+
 #5. geographic calcs 
 ##5.1 cent bio
-calculate the centroid of biomass of each species in each year
 ```{r}
 # Calculate mean position through time for species 
 ## Calculate mean latitude and depth of each species by year within each survey/region
@@ -445,7 +476,7 @@ ocean_adapt <- read.csv("neus_done_by_sarah.csv")
 ocean_adapt_fall <- subset(ocean_adapt, ocean_adapt$SEASON=="FALL")
 
 dat_strat <- ocean_adapt_fall %>% 
-  select(stratum, lat, lon, depth, stratumarea, haulid) %>% 
+  dplyr::select(stratum, lat, lon, depth, stratumarea, haulid) %>% 
   distinct(stratum, haulid, .keep_all = T) %>% 
   group_by(stratum) %>% 
   summarise(lat = meanna(lat), 
@@ -516,7 +547,7 @@ write.csv(cent_bio_fall, "cent_bio_fall.csv")
 ocean_adapt_spring <- subset(ocean_adapt, ocean_adapt$SEASON=="SPRING")
 
 dat_strat <- ocean_adapt_spring %>% 
-  select(stratum, lat, lon, depth, stratumarea, haulid) %>% 
+  dplyr::select(stratum, lat, lon, depth, stratumarea, haulid) %>% 
   distinct(stratum, haulid, .keep_all = T) %>% 
   group_by(stratum) %>% 
   summarise(lat = meanna(lat), 
@@ -585,14 +616,16 @@ write.csv(cent_bio_spring, "cent_bio_spring.csv")
 
 ```
 
-##5.2 distance shifted first five years to last five years (1984 to 2018) 
+##5.2 distance shifted 
 
 ```{r}
-
-#subset only the species in specnames 
-cent_bio_spring$spp <- gsub(" ", ".", cent_bio_spring$spp)
-cent_bio_spring <- cent_bio_spring[cent_bio_spring$spp %in% specnames,] 
 cent_bio_spring <- as.data.frame(cent_bio_spring)
+cent_bio_spring$spp <- gsub(" ", ".", cent_bio_spring$spp)
+cent_bio_spring$spp  <- gsub("[[:punct:]]$", "", cent_bio_spring$spp) #for some reason it was putting punctuation at the end. get rid of that 
+
+cent_bio_spring <- cent_bio_spring[cent_bio_spring$spp %in% specnames,] 
+
+
 
 cent_bio_spring[cent_bio_spring== "NaN"] = NA 
 #spread the data to be by year and spp 
@@ -603,11 +636,11 @@ cent_bio_spring_lon <- cent_bio_spring %>% dplyr::select(spp, lon, year) %>% spr
 #make a first 5 years and last 5 years dataset 
 cent_bio_spring_lon$`1986_1990` <- rowMeans(cent_bio_spring_lon[20:24], na.rm=T) 
 
-cent_bio_spring_lon$`2014_2018` <- rowMeans(cent_bio_spring_lon[48:53], na.rm=T) 
+cent_bio_spring_lon$`2014_2018` <- rowMeans(cent_bio_spring_lon[48:52], na.rm=T) 
 
 cent_bio_spring_lat$`1986_1990` <- rowMeans(cent_bio_spring_lat[20:24], na.rm=T) 
 
-cent_bio_spring_lat$`2014_2018` <- rowMeans(cent_bio_spring_lat[48:53], na.rm=T) 
+cent_bio_spring_lat$`2014_2018` <- rowMeans(cent_bio_spring_lat[48:52], na.rm=T) 
 
 spring_first_five <- cbind(cent_bio_spring_lon$`1986_1990`, cent_bio_spring_lat$`1986_1990`)
 
@@ -615,17 +648,20 @@ spring_last_five <- cbind(cent_bio_spring_lon$`2014_2018`, cent_bio_spring_lat$`
 
 spring_dist_5yr <- as.data.frame(distGeo(spring_first_five, spring_last_five)) #vector of distances in meters 
 #NaN exists when the species wasnt present in any of those five years. If its 0 need to convert to na
-specnames <- specnames[1:151]
-spring_dist_5yr$spp <- specnames
+spring_dist_5yr$spp <- cent_bio_spring_lon$spp
 spring_dist_5yr[spring_dist_5yr== 0] = NA
 spring_dist_5yr[spring_dist_5yr== "NaN"] = NA
 
 
 #fall
 #subset only the species in specnames 
-cent_bio_fall$spp <- gsub(" ", ".", cent_bio_fall$spp)
-cent_bio_fall <- cent_bio_fall[cent_bio_fall$spp %in% specnames,] 
 cent_bio_fall <- as.data.frame(cent_bio_fall)
+cent_bio_fall$spp <- gsub(" ", ".", cent_bio_fall$spp)
+cent_bio_fall$spp <- gsub("[[:punct:]]$", "", cent_bio_fall$spp) #for some reason it was putting punctuation at the end. get rid of that
+
+cent_bio_fall <- cent_bio_fall[cent_bio_fall$spp %in% specnames,] 
+
+
 
 cent_bio_fall[cent_bio_fall== "NaN"] = NA 
 #spread the data to be by year and spp 
@@ -634,13 +670,13 @@ cent_bio_fall_lat <- cent_bio_fall %>% dplyr::select(spp, lat, year) %>% spread(
 cent_bio_fall_lon <- cent_bio_fall %>% dplyr::select(spp, lon, year) %>% spread(key=year, value=lon) %>% group_by(spp) %>% summarise_all(mean)
 
 #make a first 5 years and last 5 years dataset 
-cent_bio_fall_lon$`1986_1990` <- rowMeans(cent_bio_fall_lon[26:30], na.rm=T) 
+cent_bio_fall_lon$`1986_1990` <- rowMeans(cent_bio_fall_lon[25:29], na.rm=T) 
 
-cent_bio_fall_lon$`2014_2018` <- rowMeans(cent_bio_fall_lon[54:58], na.rm=T) 
+cent_bio_fall_lon$`2014_2018` <- rowMeans(cent_bio_fall_lon[53:57], na.rm=T) 
 
-cent_bio_fall_lat$`1986_1990` <- rowMeans(cent_bio_fall_lat[26:30], na.rm=T) 
+cent_bio_fall_lat$`1986_1990` <- rowMeans(cent_bio_fall_lat[25:29], na.rm=T) 
 
-cent_bio_fall_lat$`2014_2018` <- rowMeans(cent_bio_fall_lat[54:58], na.rm=T) 
+cent_bio_fall_lat$`2014_2018` <- rowMeans(cent_bio_fall_lat[53:57], na.rm=T) 
 
 fall_first_five <- cbind(cent_bio_fall_lon$`1986_1990`, cent_bio_fall_lat$`1986_1990`)
 
@@ -648,7 +684,7 @@ fall_last_five <- cbind(cent_bio_fall_lon$`2014_2018`, cent_bio_fall_lat$`2014_2
 
 fall_dist_5yr <- as.data.frame(distGeo(fall_first_five, fall_last_five)) #vector of distances in meters 
 #NaN exists when the species wasnt present in any of those five years. If its 0 need to convert to na
-fall_dist_5yr$spp <- specnames
+fall_dist_5yr$spp <- cent_bio_fall_lon$spp
 fall_dist_5yr[fall_dist_5yr== 0] = NA
 fall_dist_5yr[fall_dist_5yr== "NaN"] = NA
 
@@ -668,7 +704,8 @@ write.csv(spring_dist_5yr_first5, "spring_dist_5yr_first5.csv")
 ```
 
 ##5.3 kernel density 
-biomass weighted kernel density 
+biomass weighted kernel density. 
+First make spatial objects 
 ```{r}
 
 total <- read.csv("total.csv")
@@ -689,7 +726,7 @@ total_spring_sp_86_90 <- subset(spring, year > 1985)
 total_spring_sp_14_18 <- subset(spring, year > 2013)
 
 
-#total_sp_85_90 <- total_sp_85_90 %>% drop_na()
+#total_sp_86_90 <- total_sp_86_90 %>% drop_na()
 coordinates(total_fall_sp_86_90) <- ~ lon + lat
 coordinates(total_spring_sp_86_90) <- ~ lon + lat
 coordinates(total_fall_sp_14_18) <- ~ lon + lat
@@ -701,9 +738,10 @@ coordinates(total_spring_sp_14_18) <- ~ lon + lat
 ```
 
 ###5.3.1 fall
+Then run kernel density calcs. 
 ```{r}
-spec_vol_fall_85_90 <- data.frame(matrix(ncol=6, nrow=1))
-colnames(spec_vol_fall_85_90) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
+spec_vol_fall_86_90 <- data.frame(matrix(ncol=6, nrow=1))
+colnames(spec_vol_fall_86_90) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
 
 
 for (i in 1:length(specnames)) {     
@@ -727,14 +765,14 @@ standardize = TRUE)
   table_1 <- list(name, vol, xmin, xmax, ymin, ymax)
   table_1 <- as.data.frame(table_1)
   colnames(table_1) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
-  spec_vol_fall_85_90 <- rbind(spec_vol_fall_85_90, table_1)
+  spec_vol_fall_86_90 <- rbind(spec_vol_fall_86_90, table_1)
 }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
 
 
 #second
-spec_vol_fall_13_18 <- data.frame(matrix(ncol=6, nrow=1))
-colnames(spec_vol_fall_13_18) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
+spec_vol_fall_14_18 <- data.frame(matrix(ncol=6, nrow=1))
+colnames(spec_vol_fall_14_18) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
 
 
 for (i in 1:length(specnames)) {     
@@ -758,20 +796,20 @@ standardize = TRUE)
   table_1 <- list(name, vol, xmin, xmax, ymin, ymax)
   table_1 <- as.data.frame(table_1)
   colnames(table_1) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
-  spec_vol_fall_13_18 <- rbind(spec_vol_fall_13_18, table_1)
+  spec_vol_fall_14_18 <- rbind(spec_vol_fall_14_18, table_1)
 }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
 
-write.csv(spec_vol_fall_85_90, file="kernel_fall_first_area.csv")
-write.csv(spec_vol_fall_13_18, file="kernel_fall_second_area.csv")
+write.csv(spec_vol_fall_86_90, file="kernel_fall_first_area.csv")
+write.csv(spec_vol_fall_14_18, file="kernel_fall_second_area.csv")
 
 
 ```
 
 ###5.3.2 spring
 ```{r}
-spec_vol_spring_85_90 <- data.frame(matrix(ncol=6, nrow=1))
-colnames(spec_vol_spring_85_90) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
+spec_vol_spring_86_90 <- data.frame(matrix(ncol=6, nrow=1))
+colnames(spec_vol_spring_86_90) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
 
 
 for (i in 1:length(specnames)) {     
@@ -795,14 +833,14 @@ standardize = TRUE)
   table_1 <- list(name, vol, xmin, xmax, ymin, ymax)
   table_1 <- as.data.frame(table_1)
   colnames(table_1) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
-  spec_vol_spring_85_90 <- rbind(spec_vol_spring_85_90, table_1)
+  spec_vol_spring_86_90 <- rbind(spec_vol_spring_86_90, table_1)
 }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
 
 
 #second
-spec_vol_spring_13_18 <- data.frame(matrix(ncol=6, nrow=1))
-colnames(spec_vol_spring_13_18) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
+spec_vol_spring_14_18 <- data.frame(matrix(ncol=6, nrow=1))
+colnames(spec_vol_spring_14_18) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
 
 
 for (i in 1:length(specnames)) {     
@@ -826,36 +864,34 @@ standardize = TRUE)
   table_1 <- list(name, vol, xmin, xmax, ymin, ymax)
   table_1 <- as.data.frame(table_1)
   colnames(table_1) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
-  spec_vol_spring_13_18 <- rbind(spec_vol_spring_13_18, table_1)
+  spec_vol_spring_14_18 <- rbind(spec_vol_spring_14_18, table_1)
 }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
 
-write.csv(spec_vol_spring_85_90, file="kernel_spring_first_area.csv")
-write.csv(spec_vol_spring_13_18, file="kernel_spring_second_area.csv")
-
+write.csv(spec_vol_spring_86_90, file="kernel_spring_first_area.csv")
+write.csv(spec_vol_spring_14_18, file="kernel_spring_second_area.csv")
 
 ```
 
-###5.3.4 Clean kernel 
-calculate changes in min and max lat/lon and percentage change in area (from above created datasets)
+###5.3.4 simplify kernel data 
 ```{r}
 #add convex hull data 
 
-spec_vol_spring_85_90 <- read.csv("kernel_spring_first_area.csv")
-spec_vol_spring_13_18 <- read.csv("kernel_spring_second_area.csv")
-spec_vol_fall_85_90 <- read.csv("kernel_fall_first_area.csv")
-spec_vol_fall_13_18 <- read.csv("kernel_fall_second_area.csv")
+spec_vol_spring_86_90 <- read.csv("kernel_spring_first_area.csv")
+spec_vol_spring_14_18 <- read.csv("kernel_spring_second_area.csv")
+spec_vol_fall_86_90 <- read.csv("kernel_fall_first_area.csv")
+spec_vol_fall_14_18 <- read.csv("kernel_fall_second_area.csv")
 
 
 
-convex_hull_spring <- inner_join(spec_vol_spring_85_90, spec_vol_spring_13_18, by="names")
+convex_hull_spring <- inner_join(spec_vol_spring_86_90, spec_vol_spring_14_18, by="names")
 convex_hull_spring$area_diff_5yr <- convex_hull_spring$vol.y - convex_hull_spring$vol.x #positive means gain area 
 convex_hull_spring$area_percchange_5yr <- (convex_hull_spring$vol.y - convex_hull_spring$vol.x) / convex_hull_spring$vol.x * 100
 convex_hull_spring$south_lat_change <- convex_hull_spring$ymin.y - convex_hull_spring$ymin.x
 convex_hull_spring$north_lat_change <- convex_hull_spring$ymax.y - convex_hull_spring$ymax.x
 
 
-convex_hull_fall <- inner_join(spec_vol_fall_85_90, spec_vol_fall_13_18, by="names")
+convex_hull_fall <- inner_join(spec_vol_fall_86_90, spec_vol_fall_14_18, by="names")
 convex_hull_fall$area_diff_5yr <- convex_hull_fall$vol.y - convex_hull_fall$vol.x #positive means gain area 
 convex_hull_fall$area_percchange_5yr <- (convex_hull_fall$vol.y - convex_hull_fall$vol.x) / convex_hull_fall$vol.x * 100
 convex_hull_fall$south_lat_change <- convex_hull_fall$ymin.y - convex_hull_fall$ymin.x
@@ -869,9 +905,7 @@ convex_hull_fall <- convex_hull_fall %>% dplyr::rename(first_area = vol.x, secon
 
 write.csv(convex_hull_fall, file="convex_hull_fall.csv")
 write.csv(convex_hull_spring, file="convex_hull_spring.csv")
-
 ```
-
 
 
 #6. species classifications
@@ -880,10 +914,13 @@ I've gone through and classified all of the species according to the literature.
 spp_class <- read.csv("spp_by_year_selected.csv")
 spp_class$SCINAME <- gsub(pattern = " ", replacement = ".", x = spp_class$SCINAME)
 spp_class$SCINAME <- gsub("[[:punct:]]$", "", spp_class$SCINAME) #for some reason it was putting punctuation at the end. get rid of that 
-
 spp_prof <- read.csv("spp_depth_profiles.csv")
+spp_prof$SCINAME <- gsub("[[:punct:]]$", "", spp_prof$SCINAME) #for some reason it was putting punctuation at the end. get rid of that 
+
 spp_class <- left_join(spp_class, spp_prof, by=c("SCINAME"))
 ```
+
+
 
 
 
@@ -923,27 +960,94 @@ spring_dev_dist_spec <- left_join(spring_dev_dist_spec, convex_hull_spring, by=c
 
 spring_dev_dist_spec$dist_5yr <- spring_dev_dist_spec$distGeo.spring_first_five..spring_last_five.
  
-#only the fish
-spring_dev_dist_spec <- subset(spring_dev_dist_spec, spring_dev_dist_spec$type == "fish")
 
-fall_dev_dist_spec <- subset(fall_dev_dist_spec, fall_dev_dist_spec$type == "fish")
-##only select ones that were present in more than 12 in first 5 years fall and last 5 years fall 
+```
 
+Select species based on CPUE in first five and last five years 
+```{r}
+load("neus_Survdat.RData")
+load("neus_SVSPP.RData")
+
+#which species are present in multiple years in both the spring and fall periods
+dat <- left_join(survdat, spp, by=c("SVSPP"))
+dat <- subset(dat, dat$YEAR >1985)
+dat$SCINAME <- gsub(pattern = " ", replacement = ".", x = dat$SCINAME)
+dat$SCINAME <- gsub("[[:punct:]]$", "", dat$SCINAME) #for some reason it was putting punctuation at the end. get rid of that 
+
+all_fall <- subset(dat, SEASON == "FALL") 
+all_fall$SCINAME <- gsub(" ", ".", all_fall$SCINAME)
+#all_fall <- subset(all_fall, all_fall$STRATUM %in% fall_stratum)
+
+spp_class <- read.csv("spp_by_year_selected.csv")
+spp_class$SCINAME <- gsub(pattern = " ", replacement = ".", x = spp_class$SCINAME)
+spp_class$SCINAME <- gsub("[[:punct:]]$", "", spp_class$SCINAME) #for some reason it was putting punctuation at the end. get rid of that 
+
+spp_prof <- read.csv("spp_depth_profiles.csv")
+spp_prof$SCINAME <- gsub("[[:punct:]]$", "", spp_prof$SCINAME) #for some reason it was putting punctuation at the end. get rid of that 
+
+spp_class <- left_join(spp_class, spp_prof, by=c("SCINAME"))
+
+spp_class <- subset(spp_class, spp_class$type=="fish")
+specnames <- as.vector(spp_class$SCINAME)
+
+
+all_fall <- all_fall[all_fall$SCINAME %in% specnames,]
+
+fall_pres <- as.data.frame(all_fall) %>% spread(SCINAME, ABUNDANCE) %>% group_by(YEAR) %>% summarise_at(vars (specnames), funs(sum), na.rm = TRUE)
+
+fall_pres <- rbind(fall_pres, colSums(fall_pres[1:5,]))
+fall_pres <- rbind(fall_pres, colSums(fall_pres[29:33,]))
+fall_select <- fall_pres[34:35,2:ncol(fall_pres)]
+
+fall_select <- as.data.frame(t(fall_select))
+fall_select$spp <- rownames(fall_select)
+fall_select <- subset(fall_select, fall_select$V1 >19)
+fall_select <- subset(fall_select, fall_select$V2 >19)
+fall_spp_selected <- as.vector(fall_select$spp)
+
+
+
+#spring
+
+all_spring <- subset(dat, SEASON == "SPRING") 
+all_spring$SCINAME <- gsub(" ", ".", all_spring$SCINAME)
+#all_spring <- subset(all_spring, all_spring$STRATUM %in% spring_stratum)
+
+
+all_spring <- all_spring[all_spring$SCINAME %in% specnames,]
+specnames_spring <- specnames[specnames != "FISTULARIA.PETIMBA"]
+spring_pres <- as.data.frame(all_spring) %>% spread(SCINAME, ABUNDANCE) %>% group_by(YEAR) %>% summarise_at(vars (specnames_spring), funs(sum), na.rm = TRUE)
+
+spring_pres <- rbind(spring_pres, colSums(spring_pres[1:5,]))
+spring_pres <- rbind(spring_pres, colSums(spring_pres[29:33,]))
+spring_select <- spring_pres[34:35,2:ncol(spring_pres)]
+
+spring_select <- as.data.frame(t(spring_select))
+spring_select$spp <- rownames(spring_select)
+spring_select <- subset(spring_select, spring_select$V1 >19)
+spring_select <- subset(spring_select, spring_select$V2 >19)
+spring_spp_selected <- as.vector(spring_select$spp)
+
+```
+
+```{r}
+#use only the selected species 
+fall_dev_dist_spec <- fall_dev_dist_spec[fall_dev_dist_spec$names %in% fall_spp_selected,]
+spring_dev_dist_spec <- spring_dev_dist_spec[spring_dev_dist_spec$names %in% spring_spp_selected,]
+
+##save files 
 write.csv(spring_dev_dist_spec, file="spring_dev_dist_spec.csv")
 write.csv(fall_dev_dist_spec, file="fall_dev_dist_spec.csv")
 
 ```
 
-#8.Figures 
+#8 Figures 
 ##8.1 FALL
-###8.1.1 set up melt
+### 8.1.2 set up melt
 ```{r}
 
-
-read.csv("fall_dev_dist_spec.csv")
-read.csv("spring_dev_dist_spec.csv")
-
-#get out the most important variable 
+#most important variable 
+fall_dev_dist_spec <- fall_dev_dist_spec %>% dplyr::rename("depth" = dev.depth, "bottom temperature" = dev.bt, "surface temperature" = dev.sst, "bottom salinity"=dev.bsal, "surface salinity" = dev.ssal, "substrate"= dev.sed)
 
 #removing surface salinity and temperature
   fall_dev_dist_spec_strong <- fall_dev_dist_spec %>% dplyr::select("bottom temperature", "bottom salinity", "depth", "substrate") 
@@ -956,32 +1060,46 @@ fall_dev_dist_spec_strong$strong <- colnames(fall_dev_dist_spec_strong)[max.col(
 fall_dev_dist_spec$strong <- fall_dev_dist_spec_strong$strong
 
 
-#correct distance to be in km
+#all distance #was in meters
 fall_dev_dist_spec$centroid_shift_km <- fall_dev_dist_spec$dist_5yr/1000
 
 write.csv(fall_dev_dist_spec, "fall_dev_dist_spec.csv")
 
 
-gam_supp_3 <- fall_dev_dist_spec %>% dplyr::select(names, centroid_shift_km, area_percchange_5yr, north_lat_change, south_lat_change)
-colnames(gam_supp_3) <- c("names", "Mean centroid shift (km)", "Percentage change in range size (%)", "Northern range shifted (latitude)", "Southern range shifted (latitude)")
+```
 
-dat.m.f.2 <- melt(gam_supp_3,id.vars='names', measure.vars=c("Mean centroid shift (km)", "Percentage change in range size (%)", "Northern range shifted (latitude)", "Southern range shifted (latitude)"))
+###8.1.3 Load cleaned supplemental data 
+```{r}
+#Ive gone in and made a cleaned up the supplemental tables for publication. They are the same as fall_dev_dist_spec, but with newer headings etc. We can make the figures from that. 
+fall_dev_dist_spec <- read.csv("Supplemental_table_fall.csv")
+colnames(fall_dev_dist_spec) <- gsub("[[:punct:]]", " ", colnames(fall_dev_dist_spec))
+colnames(fall_dev_dist_spec) <- gsub("  ", " ", colnames(fall_dev_dist_spec))
+colnames(fall_dev_dist_spec) <- gsub("  ", " ", colnames(fall_dev_dist_spec))
+colnames(fall_dev_dist_spec) <- gsub(" $", "", colnames(fall_dev_dist_spec))
 
-data.m.f.2 <- left_join(fall_dev_dist_spec, dat.m.f.2, by=c("names"))
+
+#melt data 
+tomelt <- fall_dev_dist_spec %>% dplyr::select("scientific name", "Mean centroid shift km", "Range size change" , "Northern range extent latitude shift degrees", "Southern range extent latitude shift degrees")
+colnames(tomelt) <- c("scientific name", "Mean centroid shift (km)", "Percentage change in range size (%)", "Northern range shifted (latitude)", "Southern range shifted (latitude)")
+
+dat.m.f.2 <- melt(tomelt,id.vars='scientific name', measure.vars=c("Mean centroid shift (km)", "Percentage change in range size (%)", "Northern range shifted (latitude)", "Southern range shifted (latitude)"))
+
+data.m.f.2 <- left_join(fall_dev_dist_spec, dat.m.f.2, by=c("scientific name"))
 data.m.f.2 <- as.data.frame(data.m.f.2)
 
 
 ```
 
-###figs
+###8.1.4 figs
 ```{r}
+options(scipen = 99999) 
 #figure 1
 my_comparisons <- list(c("depth", "bottom temperature"), c("depth", "bottom salinity"), c("depth", "substrate"), c("bottom temperature", "bottom salinity"), c("bottom temperature", "substrate"), c("bottom salinity", "substrate"))
 
 ##make pretty
-ggplot(data=data.m.f.2, aes(x=strong, y=value, fill=strong)) + geom_boxplot() +
+ggplot(data=data.m.f.2, aes(x=`strongest predictor variable`, y=value, fill=`strongest predictor variable`)) + geom_boxplot(outlier.size=.5, fatten = 1) +
   stat_summary(fun.y=mean, colour="darkred", geom="point", 
-               shape=18, size=3,show_guide = FALSE) +
+               shape=18, size=2,show_guide = FALSE) +
     labs(y = "", x = "Strongest predictor variable") +
   facet_wrap(~variable, scales = "free") +
   stat_compare_means(comparisons = my_comparisons, method="wilcox.test", label = "p.format", size=2.5) + labs(fill = "Species Type") +  
@@ -991,36 +1109,15 @@ ggplot(data=data.m.f.2, aes(x=strong, y=value, fill=strong)) + geom_boxplot() +
         axis.text = element_text(size = rel(1)), 
         strip.text = element_text(size = rel(1)), 
         panel.spacing = unit(1, "cm")) +
-  theme(legend.position = "none") + scale_fill_simpsons() + scale_color_simpsons() + ggsave(filename= "Figure1.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500)
+  theme(legend.position = "none") + scale_fill_simpsons() + scale_color_simpsons()  + ggsave(filename= "Figure1.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500)
 
-
-
-
-#Figure 2 
-my_comparisons <- list( c("pelagic", "demersal"), c("pelagic", "benthic"), c("demersal", "benthic"))
-#strongest variable for each species group 
-ggplot(data=subset(fall_dev_dist_spec, !is.na(strong)), aes(x= strong,  group=depth_profile)) + 
-    geom_bar(aes(y = ..prop.., fill = factor(..x..)), stat="count") +
-    geom_text(aes( label = scales::percent(..prop..),
-                   y= ..prop.. ), stat= "count", hjust=1, size=3) +
-    labs(y = "Percent", x = "strongest variable", lab.nb.digits=1, color="variable", orientation = "horiz", lab.size = 7, lab.hjust=-1, xlim=c(0,100)) +
-    facet_wrap(~depth_profile) +
-    scale_y_continuous(labels = percent_format(accuracy = 1)) + coord_flip() + theme(legend.position = "none") + 
-     theme_classic(base_size=10) +
-  theme(axis.title = element_text(size = rel(1.5)),
-        axis.text = element_text(size = rel(1)), 
-        strip.text = element_text(size = rel(1))) + scale_fill_simpsons() + scale_color_simpsons() +
-  theme(legend.position = "none") + 
-  ggsave(filename= "Figure2.jpg", plot=last_plot(), width = 18, height=9, units=c("cm"), dpi=500)
 
 #figure 3 Pelagic species have shifted more than benthic species
+my_comparisons <- list( c("pelagic", "demersal"), c("pelagic", "benthic"), c("demersal", "benthic"))
 
-
-#make pretty
-
-ggplot(data=data.m.f.2, aes(x=depth_profile, y=value, fill=depth_profile)) + geom_boxplot() +
+ggplot(data=data.m.f.2, aes(x=`Species type`, y=value, fill=`Species type`)) + geom_boxplot(outlier.size=.5, fatten = 1) +
   stat_summary(fun.y=mean, colour="darkred", geom="point", 
-               shape=18, size=3,show_guide = FALSE) +
+               shape=18, size=2,show_guide = FALSE) +
     labs(y = "", x = "Species type") + stat_compare_means(comparisons = my_comparisons, method="wilcox.test", label = "p.format", size=2.5) + labs(fill = "Species Type") + 
   facet_wrap(~variable, scales = "free") + 
  theme_classic(base_size=10) +
@@ -1028,23 +1125,37 @@ ggplot(data=data.m.f.2, aes(x=depth_profile, y=value, fill=depth_profile)) + geo
         axis.text = element_text(size = rel(1)), 
         strip.text = element_text(size = rel(1)), 
         panel.spacing = unit(1, "cm")) + 
-  theme(legend.position = "none") + scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9")) + 
-  ggsave(filename= "Figure3.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500)
+  theme(legend.position = "none") + scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9")) + ggsave(filename= "Figure3.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500) 
 
 fall_dev_dist_spec$strong <- gsub(" ", "\n", fall_dev_dist_spec$strong)
 
+
+#FIgure 2 strongest variable for each species group 
+ggplot(data=subset(fall_dev_dist_spec, !is.na(`strongest predictor variable`)), aes(x= `strongest predictor variable`,  group=`Species type`)) + 
+    geom_bar(aes(y = ..prop.., fill = factor(..x..)), stat="count") +
+    geom_text(aes( label = scales::percent(..prop..),
+                   y= ..prop.. ), stat= "count", hjust=1, size=3) +
+    labs(y = "Percent", x = "strongest variable", lab.nb.digits=1, color="variable", orientation = "horiz", lab.size = 7, lab.hjust=-1, xlim=c(0,100)) +
+    facet_wrap(~`Species type`) +
+    scale_y_continuous(labels = percent_format(accuracy = 1)) + coord_flip() + theme(legend.position = "none") + 
+     theme_classic(base_size=10) +
+  theme(axis.title = element_text(size = rel(1.5)),
+        axis.text = element_text(size = rel(1)), 
+        strip.text = element_text(size = rel(1))) + scale_fill_simpsons() + scale_color_simpsons() +
+  theme(legend.position = "none") + ggsave(filename= "Figure2.jpg", plot=last_plot(), width = 18, height=9, units=c("cm"), dpi=500)
+
 ```
+
+
+
+
+
 
 ##8.2 SPRING
 ###8.2.1 set up melt
 ```{r}
 #spring_dev_dist_spec <- spring_dev_dist_spec %>% dplyr::rename(substrate = substrate)
 spring_dev_dist_spec <- spring_dev_dist_spec %>% dplyr::rename("depth" = dev.depth, "bottom temperature" = dev.bt, "surface temperature" = dev.sst, "bottom salinity"=dev.bsal, "surface salinity" = dev.ssal, "substrate"= dev.sed)
-
-  spring_dev_dist_spec_strong <- spring_dev_dist_spec %>% dplyr::select("depth", "bottom temperature", "surface temperature", "bottom salinity", "surface salinity", "substrate")
-
-  spring_dev_dist_spec_strong <- abs(spring_dev_dist_spec_strong)
-spring_dev_dist_spec_strong$strong <- colnames(spring_dev_dist_spec_strong)[max.col(spring_dev_dist_spec_strong,ties.method="first")] 
 
 #removing surface salinity and temperature
   spring_dev_dist_spec_strong <- spring_dev_dist_spec %>% dplyr::select("bottom temperature", "bottom salinity", "depth", "substrate") 
@@ -1057,36 +1168,47 @@ spring_dev_dist_spec_strong$strong <- colnames(spring_dev_dist_spec_strong)[max.
 
 spring_dev_dist_spec$strong <- spring_dev_dist_spec_strong$strong
 
-my_comparisons <- list(c("depth", "bottom temperature"), c("depth", "surface temperature"), c("depth", "bottom salinity"), c("depth", "substrate"), c("bottom temperature", "surface temperature"), c("bottom temperature", "bottom salinity"), c("bottom temperature", "substrate"), c("surface temperature", "bottom salinity"), c("surface temperature", "substrate"), c("bottom salinity", "substrate"))
-
-my_comparisons <- list(c("depth", "bottom temperature"), c("depth", "bottom salinity"), c("depth", "substrate"), c("bottom temperature", "bottom salinity"), c("bottom temperature", "substrate"), c("bottom salinity", "substrate"))
-  
-
 
 #all distance 
 spring_dev_dist_spec$centroid_shift_km <- spring_dev_dist_spec$dist_5yr/1000
 #was in meters
+
 write.csv(spring_dev_dist_spec, "spring_dev_dist_spec.csv")
+```
 
-gam_supp_3 <- spring_dev_dist_spec %>% dplyr::select(names, centroid_shift_km, area_percchange_5yr, north_lat_change, south_lat_change)
-colnames(gam_supp_3) <- c("names", "Mean centroid shift (km)", "Percentage change in range size (%)", "Northern range shifted (latitude)", "Southern range shifted (latitude)")
 
-dat.m.s.2 <- melt(gam_supp_3,id.vars='names', measure.vars=c("Mean centroid shift (km)", "Percentage change in range size (%)", "Northern range shifted (latitude)", "Southern range shifted (latitude)"))
+###8.1.3 Load cleaned supplemental data 
+```{r}
+#Ive gone in and made a cleaned up the supplemental tables for publication. They are the same as spring_dev_dist_spec, but with newer headings etc. We can make the figures from that. 
+spring_dev_dist_spec <- read.csv("Supplemental_table_spring.csv")
+colnames(spring_dev_dist_spec) <- gsub("[[:punct:]]", " ", colnames(spring_dev_dist_spec))
+colnames(spring_dev_dist_spec) <- gsub("  ", " ", colnames(spring_dev_dist_spec))
+colnames(spring_dev_dist_spec) <- gsub("  ", " ", colnames(spring_dev_dist_spec))
+colnames(spring_dev_dist_spec) <- gsub(" $", "", colnames(spring_dev_dist_spec))
 
-data.m.s.2 <- left_join(spring_dev_dist_spec, dat.m.s.2, by=c("names"))
+
+#melt data 
+tomelt <- spring_dev_dist_spec %>% dplyr::select("scientific name", "Mean centroid shift km", "Range size change" , "Northern range extent latitude shift degrees", "Southern range extent latitude shift degrees")
+colnames(tomelt) <- c("scientific name", "Mean centroid shift (km)", "Percentage change in range size (%)", "Northern range shifted (latitude)", "Southern range shifted (latitude)")
+
+dat.m.s.2 <- melt(tomelt,id.vars='scientific name', measure.vars=c("Mean centroid shift (km)", "Percentage change in range size (%)", "Northern range shifted (latitude)", "Southern range shifted (latitude)"))
+
+data.m.s.2 <- left_join(spring_dev_dist_spec, dat.m.s.2, by=c("scientific name"))
 data.m.s.2 <- as.data.frame(data.m.s.2)
 
 
 ```
 
-###8.2.3 figs
+###8.1.4 figs
 ```{r}
+options(scipen = 99999) 
 #figure 1
 my_comparisons <- list(c("depth", "bottom temperature"), c("depth", "bottom salinity"), c("depth", "substrate"), c("bottom temperature", "bottom salinity"), c("bottom temperature", "substrate"), c("bottom salinity", "substrate"))
 
-ggplot(data=data.m.s.2, aes(x=strong, y=value, fill=strong)) + geom_boxplot() +
+##make pretty
+ggplot(data=data.m.s.2, aes(x=`strongest predictor variable`, y=value, fill=`strongest predictor variable`)) + geom_boxplot(outlier.size=.5, fatten = 1) +
   stat_summary(fun.y=mean, colour="darkred", geom="point", 
-               shape=18, size=3,show_guide = FALSE) +
+               shape=18, size=2,show_guide = FALSE) +
     labs(y = "", x = "Strongest predictor variable") +
   facet_wrap(~variable, scales = "free") +
   stat_compare_means(comparisons = my_comparisons, method="wilcox.test", label = "p.format", size=2.5) + labs(fill = "Species Type") +  
@@ -1096,18 +1218,15 @@ ggplot(data=data.m.s.2, aes(x=strong, y=value, fill=strong)) + geom_boxplot() +
         axis.text = element_text(size = rel(1)), 
         strip.text = element_text(size = rel(1)), 
         panel.spacing = unit(1, "cm")) +
-  theme(legend.position = "none") + scale_fill_simpsons() + scale_color_simpsons() + ggsave(filename= "Figuure1_spring.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500)
+  theme(legend.position = "none") + scale_fill_simpsons() + scale_color_simpsons()  + ggsave(filename= "Figure1_supp.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500)
 
 
-
-#figure 2 Pelagic species have shifted more than benthic species
+#figure 3 Pelagic species have shifted more than benthic species
 my_comparisons <- list( c("pelagic", "demersal"), c("pelagic", "benthic"), c("demersal", "benthic"))
 
-#make pretty
-
-ggplot(data=data.m.s.2, aes(x=depth_profile_reviewer, y=value, fill=depth_profile)) + geom_boxplot() +
+ggplot(data=data.m.s.2, aes(x=`Species type`, y=value, fill=`Species type`)) + geom_boxplot(outlier.size=.5, fatten = 1) +
   stat_summary(fun.y=mean, colour="darkred", geom="point", 
-               shape=18, size=3,show_guide = FALSE) +
+               shape=18, size=2,show_guide = FALSE) +
     labs(y = "", x = "Species type") + stat_compare_means(comparisons = my_comparisons, method="wilcox.test", label = "p.format", size=2.5) + labs(fill = "Species Type") + 
   facet_wrap(~variable, scales = "free") + 
  theme_classic(base_size=10) +
@@ -1115,30 +1234,55 @@ ggplot(data=data.m.s.2, aes(x=depth_profile_reviewer, y=value, fill=depth_profil
         axis.text = element_text(size = rel(1)), 
         strip.text = element_text(size = rel(1)), 
         panel.spacing = unit(1, "cm")) + 
-  theme(legend.position = "none") + scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9")) + 
-  ggsave(filename= "Figure3_spring.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500)
+  theme(legend.position = "none") + scale_fill_manual(values=c("#999999", "#E69F00", "#56B4E9")) + ggsave(filename= "Figure4_supp.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500) 
 
 spring_dev_dist_spec$strong <- gsub(" ", "\n", spring_dev_dist_spec$strong)
 
-#Figure 3 
-#strongest variable for each species group 
-ggplot(data=subset(spring_dev_dist_spec, !is.na(strong)), aes(x= strong,  group=depth_profile)) + 
+
+#FIgure 2 strongest variable for each species group 
+ggplot(data=subset(spring_dev_dist_spec, !is.na(`strongest predictor variable`)), aes(x= `strongest predictor variable`,  group=`Species type`)) + 
     geom_bar(aes(y = ..prop.., fill = factor(..x..)), stat="count") +
     geom_text(aes( label = scales::percent(..prop..),
                    y= ..prop.. ), stat= "count", hjust=1, size=3) +
     labs(y = "Percent", x = "strongest variable", lab.nb.digits=1, color="variable", orientation = "horiz", lab.size = 7, lab.hjust=-1, xlim=c(0,100)) +
-    facet_wrap(~depth_profile) +
+    facet_wrap(~`Species type`) +
     scale_y_continuous(labels = percent_format(accuracy = 1)) + coord_flip() + theme(legend.position = "none") + 
      theme_classic(base_size=10) +
   theme(axis.title = element_text(size = rel(1.5)),
         axis.text = element_text(size = rel(1)), 
         strip.text = element_text(size = rel(1))) + scale_fill_simpsons() + scale_color_simpsons() +
-  theme(legend.position = "none") + 
-  ggsave(filename= "Figure2_spring", plot=last_plot(), width = 18, height=9, units=c("cm"), dpi=500)
+  theme(legend.position = "none") + ggsave(filename= "Figure2_supp.jpg", plot=last_plot(), width = 18, height=9, units=c("cm"), dpi=500)
 
-
- 
 ```
+
+##8.3 Figure 4 Map 
+I originally created this figure in arcmap for layout and visualization capabilities, but it is also repeated below for reproducibility. 
+```{r}
+#map attempt
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+colnames(fall_dist_5yr_first5) <- c("Lon1", "Lat1", "dist1", "spp")
+colnames(fall_dist_5yr_last5) <- c("Lon2", "Lat2", "dist2", "spp")
+mapping_1 <- left_join(fall_dist_5yr_first5, fall_dist_5yr_last5, by = c("spp"))
+mapping_1 <- subset(mapping_1, mapping_1$spp == "HIPPOGLOSSOIDES.PLATESSOIDES" |mapping_1$spp == "GLYPTOCEPHALUS.CYNOGLOSSUS" | mapping_1$spp == "PSEUDOPLEURONECTES.AMERICANUS")
+
+mapping_2 <- left_join(fall_dist_5yr_first5, fall_dist_5yr_last5, by = c("spp"))
+mapping_2 <- subset(mapping_2, mapping_2$spp =="TRACHURUS.LATHAMI" |mapping_2$spp == "BREVOORTIA.TYRANNUS" | mapping_2$spp == "ETRUMEUS.TERES")
+
+ggplot(data = world) +
+     geom_sf() +
+    geom_point(data = mapping_1, aes(x = Lon1, y = Lat1, color = spp)) +
+    geom_point(data = mapping_1, shape = 15, aes(x = Lon2, y = Lat2, color = spp)) +
+    coord_sf(xlim=c(-85, -60), ylim=c(30,45), expand = TRUE) + theme(panel.background = element_rect(fill = "white", colour = "black"))
+
+ggplot(data = world) +
+     geom_sf() +
+    geom_point(data = mapping_2, aes(x = Lon1, y = Lat1, color = spp)) +
+    geom_point(data = mapping_2, shape = 15, aes(x = Lon2, y = Lat2, color = spp)) +
+    coord_sf(xlim=c(-85, -60), ylim=c(30,45), expand = TRUE) + theme(panel.background = element_rect(fill = "white", colour = "black"))
+```
+
+
 
 
 #9 count of each group
@@ -1151,4 +1295,6 @@ fall_dev_dist_spec %>%
   group_by(depth_profile) %>%
   summarise(count=n())
 ```
+
+
 
