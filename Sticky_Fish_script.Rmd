@@ -16,7 +16,7 @@ This file does the following:
 8. Create figures and perform two sided wilcoxon nonparametric tests
 
 
-You will need the following datasets for this to run: 
+You will need the following datasets for this to run. The ocean adapt datasets can be downloaded from https://oceanadapt.rutgers.edu/ 
 
 FROM OCEAN ADAPT: 
 "neus_Survdat.RData" - 
@@ -61,7 +61,7 @@ FROM OCEAN ADAPT:
 		Areakm2: area of the stratum in km2
 		Areanmi2: area in square nautical miles
 
-FROM AUTHORS WORK 
+FROM AUTHORS WORK:  
 "ocean_adapt_hab_vars.csv" - NEFSC lat long and time data combined with NAO and AMO data from Hurrel and TNC North Atlantic Marine Ecosystem Regional Assessment dataset in ArcGis. See methodology for details. 
 
 "spp_depth_profiles.csv" - depth profiles collected from literature for each species as well as the information on species orders and types (i.e fish or invertebrate)
@@ -215,6 +215,7 @@ write.csv(neus, "neus_done_by_sarah.csv")
 ```
 
 ```{r}
+#create a haulid for the survey data as well. 
 survdat <- survdat %>%
   mutate(
     # Create a unique haulid
