@@ -239,9 +239,8 @@ ocean_adapt <- ocean_adapt %>%
  mutate(row_id=1:n()) %>% ungroup() %>% # build group index
  spread(key=spp, value=wtcpue)  # spread
 
-#fall_catch$ID <- as.numeric(as.character(fall_catch$ID))
+
 ocean_adapt$haulid1 <- gsub(pattern = "-", replacement = "", x = ocean_adapt$haulid)
-#ocean_adapt$haulid1 <- as.numeric(as.integer(ocean_adapt$haulid1))
 ocean_adapt_select <- ocean_adapt %>% dplyr::select(-SEASON, -date, -row_id) %>% 
   group_by(haulid1) %>% 
   replace(is.na(.), 0) %>%
@@ -310,7 +309,7 @@ spring_strat_m <- tot_spring %>% group_by(stratum) %>%
 
 tot_strat_m <- full_join(fall_strat_m, spring_strat_m, by=c("stratum"))
 
-#selecting out consistently sampled stratum for spring (need to choose these years) and fall (32 years) datasets 
+#selecting out consistently sampled stratum for spring (32) and fall (32 years) datasets 
 fall_strat_m_select <- subset(fall_strat_m, years_fall>=32) 
 spring_strat_m_select <- subset(spring_strat_m, years_spring>=32) 
 
@@ -326,7 +325,7 @@ write.csv(tot_spring, "spring.csv")
 total <- rbind(tot_fall, tot_spring)
 write.csv(total, "total.csv")
 ```
-Alrighty we should have spring and fall datasets with stratum that were sampled every year for each 
+Alrighty we should have spring and fall datasets with stratum that were sampled every year for each season
 
 
 #3. Selecting species
@@ -369,6 +368,7 @@ specnames <- as.vector(spp_by_year_selected$SCINAME)
 specnames should have 151 species in it 
 
 #4.Gams 
+Run gams on each species (for spring and fall separately) to determine the deviance explained by each predictor variable. 
 ```{r}
 library(mgcv)
 
@@ -618,7 +618,7 @@ write.csv(cent_bio_spring, "cent_bio_spring.csv")
 ```
 
 ##5.2 distance shifted 
-
+calculate the distance shifted from the first five years to the last five years. 
 ```{r}
 cent_bio_spring <- as.data.frame(cent_bio_spring)
 cent_bio_spring$spp <- gsub(" ", ".", cent_bio_spring$spp)
@@ -739,7 +739,7 @@ coordinates(total_spring_sp_14_18) <- ~ lon + lat
 ```
 
 ###5.3.1 fall
-Then run kernel density calcs. 
+Then run kernel density calcs including biomass weighted area size and min and max latitude and longitude. 
 ```{r}
 spec_vol_fall_86_90 <- data.frame(matrix(ncol=6, nrow=1))
 colnames(spec_vol_fall_86_90) <- c("names", "vol", "xmin", "xmax", "ymin", "ymax")
@@ -875,6 +875,7 @@ write.csv(spec_vol_spring_14_18, file="kernel_spring_second_area.csv")
 ```
 
 ###5.3.4 simplify kernel data 
+clean column names etc. 
 ```{r}
 #add convex hull data 
 
@@ -964,7 +965,7 @@ spring_dev_dist_spec$dist_5yr <- spring_dev_dist_spec$distGeo.spring_first_five.
 
 ```
 
-Select species based on CPUE in first five and last five years 
+Select species based on CPUE ( >= 20) in first five and last five years 
 ```{r}
 load("neus_Survdat.RData")
 load("neus_SVSPP.RData")
@@ -1045,9 +1046,10 @@ write.csv(fall_dev_dist_spec, file="fall_dev_dist_spec.csv")
 #8 Figures 
 ##8.1 FALL
 ### 8.1.2 set up melt
+find the most important predictor variable based on deviance explained, convert distance to km. 
 ```{r}
 
-#most important variable 
+
 fall_dev_dist_spec <- fall_dev_dist_spec %>% dplyr::rename("depth" = dev.depth, "bottom temperature" = dev.bt, "surface temperature" = dev.sst, "bottom salinity"=dev.bsal, "surface salinity" = dev.ssal, "substrate"= dev.sed)
 
 #removing surface salinity and temperature
@@ -1070,8 +1072,9 @@ write.csv(fall_dev_dist_spec, "fall_dev_dist_spec.csv")
 ```
 
 ###8.1.3 Load cleaned supplemental data 
+Ive gone in and made cleaned supplemental tables for publication. They are the same as fall_dev_dist_spec, but with newer headings etc. We can make the figures from them. This chunk also melts data to be in a format for plotting.  
 ```{r}
-#Ive gone in and made a cleaned up the supplemental tables for publication. They are the same as fall_dev_dist_spec, but with newer headings etc. We can make the figures from that. 
+
 fall_dev_dist_spec <- read.csv("Supplemental_table_fall.csv")
 colnames(fall_dev_dist_spec) <- gsub("[[:punct:]]", " ", colnames(fall_dev_dist_spec))
 colnames(fall_dev_dist_spec) <- gsub("  ", " ", colnames(fall_dev_dist_spec))
@@ -1092,12 +1095,14 @@ data.m.f.2 <- as.data.frame(data.m.f.2)
 ```
 
 ###8.1.4 figs
+create figures 
 ```{r}
 options(scipen = 99999) 
 #figure 1
+##Distance shifted vs strongest predictor variable in the fall 
+
 my_comparisons <- list(c("depth", "bottom temperature"), c("depth", "bottom salinity"), c("depth", "substrate"), c("bottom temperature", "bottom salinity"), c("bottom temperature", "substrate"), c("bottom salinity", "substrate"))
 
-##make pretty
 ggplot(data=data.m.f.2, aes(x=`strongest predictor variable`, y=value, fill=`strongest predictor variable`)) + geom_boxplot(outlier.size=.5, fatten = 1) +
   stat_summary(fun.y=mean, colour="darkred", geom="point", 
                shape=18, size=2,show_guide = FALSE) +
@@ -1131,7 +1136,7 @@ ggplot(data=data.m.f.2, aes(x=`Species type`, y=value, fill=`Species type`)) + g
 fall_dev_dist_spec$strong <- gsub(" ", "\n", fall_dev_dist_spec$strong)
 
 
-#FIgure 2 strongest variable for each species group 
+#Figure 2 strongest variable for each species group 
 ggplot(data=subset(fall_dev_dist_spec, !is.na(`strongest predictor variable`)), aes(x= `strongest predictor variable`,  group=`Species type`)) + 
     geom_bar(aes(y = ..prop.., fill = factor(..x..)), stat="count") +
     geom_text(aes( label = scales::percent(..prop..),
@@ -1154,8 +1159,9 @@ ggplot(data=subset(fall_dev_dist_spec, !is.na(`strongest predictor variable`)), 
 
 ##8.2 SPRING
 ###8.2.1 set up melt
+The below code does the exact same thing as above but for the spring 
 ```{r}
-#spring_dev_dist_spec <- spring_dev_dist_spec %>% dplyr::rename(substrate = substrate)
+
 spring_dev_dist_spec <- spring_dev_dist_spec %>% dplyr::rename("depth" = dev.depth, "bottom temperature" = dev.bt, "surface temperature" = dev.sst, "bottom salinity"=dev.bsal, "surface salinity" = dev.ssal, "substrate"= dev.sed)
 
 #removing surface salinity and temperature
@@ -1203,10 +1209,9 @@ data.m.s.2 <- as.data.frame(data.m.s.2)
 ###8.1.4 figs
 ```{r}
 options(scipen = 99999) 
-#figure 1
+#figure 1 Supplemental - Distance shifted vs strongest predictor variable in the spring 
 my_comparisons <- list(c("depth", "bottom temperature"), c("depth", "bottom salinity"), c("depth", "substrate"), c("bottom temperature", "bottom salinity"), c("bottom temperature", "substrate"), c("bottom salinity", "substrate"))
 
-##make pretty
 ggplot(data=data.m.s.2, aes(x=`strongest predictor variable`, y=value, fill=`strongest predictor variable`)) + geom_boxplot(outlier.size=.5, fatten = 1) +
   stat_summary(fun.y=mean, colour="darkred", geom="point", 
                shape=18, size=2,show_guide = FALSE) +
@@ -1222,7 +1227,7 @@ ggplot(data=data.m.s.2, aes(x=`strongest predictor variable`, y=value, fill=`str
   theme(legend.position = "none") + scale_fill_simpsons() + scale_color_simpsons()  + ggsave(filename= "Figure1_supp.jpg", plot=last_plot(), width = 18, height=18, units=c("cm"), dpi=500)
 
 
-#figure 3 Pelagic species have shifted more than benthic species
+#figure 4 Supplemental - Pelagic species have shifted more than benthic species
 my_comparisons <- list( c("pelagic", "demersal"), c("pelagic", "benthic"), c("demersal", "benthic"))
 
 ggplot(data=data.m.s.2, aes(x=`Species type`, y=value, fill=`Species type`)) + geom_boxplot(outlier.size=.5, fatten = 1) +
@@ -1240,7 +1245,7 @@ ggplot(data=data.m.s.2, aes(x=`Species type`, y=value, fill=`Species type`)) + g
 spring_dev_dist_spec$strong <- gsub(" ", "\n", spring_dev_dist_spec$strong)
 
 
-#FIgure 2 strongest variable for each species group 
+#Figure 2 Supplemental -  strongest variable for each species group in the spring 
 ggplot(data=subset(spring_dev_dist_spec, !is.na(`strongest predictor variable`)), aes(x= `strongest predictor variable`,  group=`Species type`)) + 
     geom_bar(aes(y = ..prop.., fill = factor(..x..)), stat="count") +
     geom_text(aes( label = scales::percent(..prop..),
