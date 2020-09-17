@@ -724,11 +724,9 @@ names(spring)<-make.names(names(spring),unique = TRUE)
 
 #Lets select out the time period chunks we need. 
 total_fall_sp_86_90 <- subset(fall, year < 1991)
-total_fall_sp_86_90 <- subset(fall, year > 1985)
 total_fall_sp_14_18 <- subset(fall, year > 2013)
 
 total_spring_sp_86_90 <- subset(spring, year < 1991)
-total_spring_sp_86_90 <- subset(spring, year > 1985)
 total_spring_sp_14_18 <- subset(spring, year > 2013)
 
 
@@ -1306,6 +1304,4 @@ fall_dev_dist_spec %>%
   group_by(depth_profile) %>%
   summarise(count=n())
 ```
-
-
 
