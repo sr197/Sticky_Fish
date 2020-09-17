@@ -214,6 +214,7 @@ neus <- neus %>%
 write.csv(neus, "neus_done_by_sarah.csv")
 ```
 
+this takes about a minute
 ```{r}
 #create a haulid for the survey data as well. 
 survdat <- survdat %>%
@@ -234,6 +235,7 @@ ocean_adapt <- read.csv("neus_done_by_sarah.csv")
 
 manipulate ocean adapt to be in a tidy format. 
 ```{r}
+#this takes about a minute to run
 ocean_adapt <- ocean_adapt %>% 
  group_by_at(vars(-wtcpue)) %>% # group by everything other than the value column. 
  mutate(row_id=1:n()) %>% ungroup() %>% # build group index
@@ -241,6 +243,8 @@ ocean_adapt <- ocean_adapt %>%
 
 
 ocean_adapt$haulid1 <- gsub(pattern = "-", replacement = "", x = ocean_adapt$haulid)
+
+#this takes about 20 minutes 
 ocean_adapt_select <- ocean_adapt %>% dplyr::select(-SEASON, -date, -row_id) %>% 
   group_by(haulid1) %>% 
   replace(is.na(.), 0) %>%
@@ -249,7 +253,7 @@ ocean_adapt_select <- ocean_adapt %>% dplyr::select(-SEASON, -date, -row_id) %>%
 
 
 ocean_adapt_info <- ocean_adapt %>% dplyr::select(haulid1, SEASON, date)
-
+#this also takes about 20 minutes
 ocean_adapt_info <- ocean_adapt_info %>% dplyr::group_by(haulid1) %>% 
   summarise(SEASON= Mode(SEASON), DATE= Mode(date))
 
@@ -294,6 +298,7 @@ total_full <- left_join(total_full, survey_data, by="haulid")
 
 write.csv(total_full, "total_full.csv")
 
+#this is because they changed trawl doors to catch more pelagic species in 1985
 total_full <- subset(total_full, total_full$year > 1985)
 total_full$season <- total_full$SEASON
 tot_fall <- subset(total_full, season=="FALL")
@@ -472,7 +477,7 @@ write.csv(spring_gam_dev, "spring_gam_dev.csv")
 ## Calculate mean latitude and depth of each species by year within each survey/region
 ### mean lat/lon/depth for each stratum
 
-ocean_adapt <- read.csv("neus_done_by_sarah.csv")
+ocean_adapt <- neus_done_by_sarah
 
 ocean_adapt_fall <- subset(ocean_adapt, ocean_adapt$SEASON=="FALL")
 
