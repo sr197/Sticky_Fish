@@ -136,6 +136,8 @@ meanna = function(x){
 
 ```
 
+
+
 ##1.3 Load and clean data 
 ```{r}
 # Compile NEUS ===========================================================
@@ -401,12 +403,12 @@ colnames(fall_gam_dev) <- c("names", "dev.depth", "dev.bt", "dev.sst", "dev.bsal
 for (i in 1:length(specnames)) { #for each species in spec_list
   fit <- gam(as.formula(paste(specnames[i],"~ depth + bottemp + botsalin + SEDIMENT + surfsalin + botsalin")), data=fall)
 #standardized <- lm.beta(fit)
-        fit_depth <- gam(as.formula(paste(specnames[i],"~ 1 + depth")), data=total)
-          fit_bt <- gam(as.formula(paste(specnames[i],"~ bottemp")), data=total)
-           fit_ssal <- gam(as.formula(paste(specnames[i],"~ surfsalin")), data=total)
-         fit_sed <- gam(as.formula(paste(specnames[i],"~ SEDIMENT")), data=total)
-         fit_bsal <- gam(as.formula(paste(specnames[i],"~ botsalin")), data=total)
-         fit_sst <- gam(as.formula(paste(specnames[i],"~ surftemp")), data=total) 
+        fit_depth <- gam(as.formula(paste(specnames[i],"~ 1 + depth")), data=fall)
+          fit_bt <- gam(as.formula(paste(specnames[i],"~ bottemp")), data=fall)
+           fit_ssal <- gam(as.formula(paste(specnames[i],"~ surfsalin")), data=fall)
+         fit_sed <- gam(as.formula(paste(specnames[i],"~ SEDIMENT")), data=fall)
+         fit_bsal <- gam(as.formula(paste(specnames[i],"~ botsalin")), data=fall)
+         fit_sst <- gam(as.formula(paste(specnames[i],"~ surftemp")), data=fall) 
         dev.depth <- summary(fit_depth)$dev.expl
         dev.bt <- summary(fit_bt)$dev.expl
         dev.ssal <- summary(fit_ssal)$dev.expl
@@ -433,12 +435,12 @@ colnames(spring_gam_dev) <- c("names", "dev.depth", "dev.bt", "dev.sst", "dev.bs
 for (i in 1:length(specnames)) { #for each species in spec_list
   fit <- gam(as.formula(paste(specnames[i],"~ depth + bottemp + botsalin + SEDIMENT + surfsalin + botsalin")), data=spring)
 #standardized <- lm.beta(fit)
-        fit_depth <- gam(as.formula(paste(specnames[i],"~ 1 + depth")), data=total)
-          fit_bt <- gam(as.formula(paste(specnames[i],"~ bottemp")), data=total)
-           fit_ssal <- gam(as.formula(paste(specnames[i],"~ surfsalin")), data=total)
-         fit_sed <- gam(as.formula(paste(specnames[i],"~ SEDIMENT")), data=total)
-         fit_bsal <- gam(as.formula(paste(specnames[i],"~ botsalin")), data=total)
-         fit_sst <- gam(as.formula(paste(specnames[i],"~ surftemp")), data=total) 
+        fit_depth <- gam(as.formula(paste(specnames[i],"~ 1 + depth")), data=spring)
+          fit_bt <- gam(as.formula(paste(specnames[i],"~ bottemp")), data=spring)
+           fit_ssal <- gam(as.formula(paste(specnames[i],"~ surfsalin")), data=spring)
+         fit_sed <- gam(as.formula(paste(specnames[i],"~ SEDIMENT")), data=spring)
+         fit_bsal <- gam(as.formula(paste(specnames[i],"~ botsalin")), data=spring)
+         fit_sst <- gam(as.formula(paste(specnames[i],"~ surftemp")), data=spring) 
         dev.depth <- summary(fit_depth)$dev.expl
         dev.bt <- summary(fit_bt)$dev.expl
         dev.ssal <- summary(fit_ssal)$dev.expl
