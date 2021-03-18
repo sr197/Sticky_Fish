@@ -391,7 +391,7 @@ specnames <- specnames[1:151,]
 spp <- specnames
 specnames <- as.vector(specnames$SCINAME)
 
-
+specnames <- specnames[!(specnames %in% c("SYACIUM.PAPILLOSUM"))]
 
 #fall 
 fall <- subset(total, total$season=="FALL")
@@ -401,14 +401,14 @@ fall_gam_dev <- data.frame(matrix(ncol=7, nrow=1))
 colnames(fall_gam_dev) <- c("names", "dev.depth", "dev.bt", "dev.sst", "dev.bsal", "dev.ssal", "dev.sed")
 
 for (i in 1:length(specnames)) { #for each species in spec_list
-  fit <- gam(as.formula(paste(specnames[i],"~ depth + bottemp + botsalin + SEDIMENT + surfsalin + botsalin")), data=fall)
+  fit <- gam(as.formula(paste(specnames[i],"~ s(depth) + s(bottemp) + s(botsalin) + factor(SEDIMENT) + s(surfsalin) + s(botsalin)")), data=fall, method="REML")
 #standardized <- lm.beta(fit)
-        fit_depth <- gam(as.formula(paste(specnames[i],"~ 1 + depth")), data=fall)
-          fit_bt <- gam(as.formula(paste(specnames[i],"~ bottemp")), data=fall)
-           fit_ssal <- gam(as.formula(paste(specnames[i],"~ surfsalin")), data=fall)
-         fit_sed <- gam(as.formula(paste(specnames[i],"~ SEDIMENT")), data=fall)
-         fit_bsal <- gam(as.formula(paste(specnames[i],"~ botsalin")), data=fall)
-         fit_sst <- gam(as.formula(paste(specnames[i],"~ surftemp")), data=fall) 
+        fit_depth <- gam(as.formula(paste(specnames[i],"~ s(depth)")), data=fall, method="REML")
+          fit_bt <- gam(as.formula(paste(specnames[i],"~ s(bottemp)")), data=fall, method="REML")
+           fit_ssal <- gam(as.formula(paste(specnames[i],"~ s(surfsalin)")), data=fall, method="REML")
+         fit_sed <- gam(as.formula(paste(specnames[i],"~ factor(SEDIMENT)")), data=fall, method="REML")
+         fit_bsal <- gam(as.formula(paste(specnames[i],"~ s(botsalin)")), data=fall, method="REML")
+         fit_sst <- gam(as.formula(paste(specnames[i],"~ s(surftemp)")), data=fall, method="REML") 
         dev.depth <- summary(fit_depth)$dev.expl
         dev.bt <- summary(fit_bt)$dev.expl
         dev.ssal <- summary(fit_ssal)$dev.expl
@@ -433,14 +433,14 @@ spring_gam_dev <- data.frame(matrix(ncol=7, nrow=1))
 colnames(spring_gam_dev) <- c("names", "dev.depth", "dev.bt", "dev.sst", "dev.bsal", "dev.ssal", "dev.sed")
 
 for (i in 1:length(specnames)) { #for each species in spec_list
-  fit <- gam(as.formula(paste(specnames[i],"~ depth + bottemp + botsalin + SEDIMENT + surfsalin + botsalin")), data=spring)
+  fit <- gam(as.formula(paste(specnames[i],"~ s(depth) + s(bottemp) + s(botsalin) + factor(SEDIMENT) + s(surfsalin) + s(botsalin)")), data=spring, method="REML")
 #standardized <- lm.beta(fit)
-        fit_depth <- gam(as.formula(paste(specnames[i],"~ 1 + depth")), data=spring)
-          fit_bt <- gam(as.formula(paste(specnames[i],"~ bottemp")), data=spring)
-           fit_ssal <- gam(as.formula(paste(specnames[i],"~ surfsalin")), data=spring)
-         fit_sed <- gam(as.formula(paste(specnames[i],"~ SEDIMENT")), data=spring)
-         fit_bsal <- gam(as.formula(paste(specnames[i],"~ botsalin")), data=spring)
-         fit_sst <- gam(as.formula(paste(specnames[i],"~ surftemp")), data=spring) 
+        fit_depth <- gam(as.formula(paste(specnames[i],"~ s(depth)")), data=spring, method="REML")
+          fit_bt <- gam(as.formula(paste(specnames[i],"~ s(bottemp)")), data=spring, method="REML")
+           fit_ssal <- gam(as.formula(paste(specnames[i],"~ s(surfsalin)")), data=spring, method="REML")
+         fit_sed <- gam(as.formula(paste(specnames[i],"~ factor(SEDIMENT)")), data=spring, method="REML")
+         fit_bsal <- gam(as.formula(paste(specnames[i],"~ s(botsalin)")), data=spring, method="REML")
+         fit_sst <- gam(as.formula(paste(specnames[i],"~ s(surftemp)")), data=spring, method="REML") 
         dev.depth <- summary(fit_depth)$dev.expl
         dev.bt <- summary(fit_bt)$dev.expl
         dev.ssal <- summary(fit_ssal)$dev.expl
